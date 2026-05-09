@@ -1,0 +1,124 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"math/rand"
+	"net/http"
+	"strconv"
+)
+
+func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Request) {
+	var p Patient
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		http.Error(w, "Invalid data", http.StatusBadRequest)
+		return
+	}
+
+	// Generate a random ID and convert to string
+	p.ID = strconv.Itoa(rand.Intn(9000) + 1000)
+
+	_, err := app.db.Exec("INSERT INTO patients (id, name, age, condition) VALUES (?, ?, ?, ?)",
+		p.ID, p.Name, p.Age, p.Condition)
+	if err != nil {
+		http.Error(w, "DB Error", 500)
+		return
+	}
+
+	// w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(p)
+}
+
+func (app *application) getAllPatientsHandler(w http.ResponseWriter, r *http.Request) {
+	rows, err := app.db.Query("SELECT * FROM patients")
+	if err != nil {
+		http.Error(w, "DB Error", 500)
+		return
+	}
+	defer rows.Close()
+
+	patientsSlice := make([]Patient, 0)
+	for rows.Next() {
+		var p Patient
+		if err := rows.Scan(&p.ID, &p.Name, &p.Age, &p.Condition); err != nil {
+			http.Error(w, "DB Error", 500)
+			return
+		}
+		patientsSlice = append(patientsSlice, p)
+		// fmt.Println("Patients:", patientsSlice)
+		// fmt.Println("f:", f)
+		// fmt.Println("p:", p)
+		// fmt.Println("app.patients:", app.patients)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(patientsSlice)
+}
+
+func (app *application) getPatientHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var p Patient
+
+	err := app.db.QueryRow("SELECT id, name, age, condition FROM patients WHERE id = ?", id).
+		Scan(&p.ID, &p.Name, &p.Age, &p.Condition)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, "Patient not found", 404)
+		return
+	}
+
+	// w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(p)
+}
+
+func (app *application) deletePatientHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. Get the ID from the URL
+	id := r.PathValue("id")
+
+	_, _ = app.db.Exec("DELETE FROM patients WHERE id = ?", id)
+	w.WriteHeader(http.StatusNoContent)
+
+	// 4. Send a success response
+	w.WriteHeader(http.StatusNoContent) // 204 No Content is standard for DELETE
+}
+
+func (app *application) updatePatientHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	// 1. Fetch current data from DB
+	var p Patient
+	err := app.db.QueryRow("SELECT id, name, age, condition FROM patients WHERE id = ?", id).
+		Scan(&p.ID, &p.Name, &p.Age, &p.Condition)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, "Patient not found", 404)
+		return
+	}
+
+	// 2. Decode the new data into a temporary map or struct
+	// We use a map here to see EXACTLY which fields the user sent
+	var input struct {
+		Name      *string `json:"name"`
+		Age       *int    `json:"age"`
+		Condition *string `json:"condition"`
+	}
+
+	json.NewDecoder(r.Body).Decode(&input)
+
+	// 3. Only update fields that were actually in the JSON
+	if input.Name != nil {
+		p.Name = *input.Name
+	}
+	if input.Age != nil {
+		p.Age = *input.Age
+	}
+	if input.Condition != nil {
+		p.Condition = *input.Condition
+	}
+
+	// 4. Save the updated version back to DB
+	_, err = app.db.Exec("UPDATE patients SET name = ?, age = ?, condition = ? WHERE id = ?",
+		p.Name, p.Age, p.Condition, id)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(p)
+	w.WriteHeader(http.StatusOK)
+}
