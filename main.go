@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"os"
 
 	_ "modernc.org/sqlite"
 )
 
 type application struct {
-	db *sql.DB
+	db     *sql.DB
+	logger *log.Logger
 }
 
 func main() {
@@ -19,16 +21,31 @@ func main() {
 	}
 	defer db.Close()
 
-	// Create the table automatically
+	// Create the table automatically for patients
 	query := `CREATE TABLE IF NOT EXISTS patients (
         id TEXT PRIMARY KEY,
         name TEXT,
         age INTEGER,
         condition TEXT
-    );`
+		);`
 	_, _ = db.Exec(query)
 
-	app := &application{db: db}
+	// Create the table automatically for staff
+	staffquery := `CREATE TABLE IF NOT EXISTS staff (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE, -- UNIQUE prevents duplicate usernames
+    password_hash TEXT,
+    role TEXT
+);`
+	_, _ = db.Exec(staffquery)
+
+	logger := log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	app := &application{db: db, logger: logger}
+
+	if err != nil {
+		logger.Fatal("Error initializing Logger: ", err)
+	}
 
 	srv := &http.Server{
 		Addr:    ":8080",

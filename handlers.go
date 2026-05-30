@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -10,14 +11,26 @@ import (
 
 func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Request) {
 	var p Patient
+
+	fmt.Println(p)
+
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		fmt.Println("Error decoding JSON:", err)
 		http.Error(w, "Invalid data", http.StatusBadRequest)
 		return
 	}
 
+	app.logger.Printf("Received new patient data: %+v", p)
+
 	// Generate a random ID and convert to string
 	p.ID = strconv.Itoa(rand.Intn(9000) + 1000)
 
+	fmt.Println(p)
+
+	if p.Name == "" || p.Age == 0 || p.Condition == "" {
+		http.Error(w, "Missing fields", http.StatusBadRequest)
+		return
+	}
 	_, err := app.db.Exec("INSERT INTO patients (id, name, age, condition) VALUES (?, ?, ?, ?)",
 		p.ID, p.Name, p.Age, p.Condition)
 	if err != nil {
@@ -25,7 +38,7 @@ func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(p)
 }
@@ -37,6 +50,8 @@ func (app *application) getAllPatientsHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer rows.Close()
+
+	app.logger.Printf("Fetched all patients from database")
 
 	patientsSlice := make([]Patient, 0)
 	for rows.Next() {
@@ -66,6 +81,7 @@ func (app *application) getPatientHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Patient not found", 404)
 		return
 	}
+	app.logger.Printf("Fetched a patient from database: %+v", p)
 
 	// w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(p)
@@ -74,6 +90,8 @@ func (app *application) getPatientHandler(w http.ResponseWriter, r *http.Request
 func (app *application) deletePatientHandler(w http.ResponseWriter, r *http.Request) {
 	// 1. Get the ID from the URL
 	id := r.PathValue("id")
+
+	app.logger.Printf("Attempting to delete patient with ID: %s", id)
 
 	_, _ = app.db.Exec("DELETE FROM patients WHERE id = ?", id)
 	w.WriteHeader(http.StatusNoContent)
@@ -88,6 +106,8 @@ func (app *application) updatePatientHandler(w http.ResponseWriter, r *http.Requ
 	var p Patient
 	err := app.db.QueryRow("SELECT id, name, age, condition FROM patients WHERE id = ?", id).
 		Scan(&p.ID, &p.Name, &p.Age, &p.Condition)
+
+	app.logger.Printf("Fetched patient for update: %+v", p)
 
 	if err == sql.ErrNoRows {
 		http.Error(w, "Patient not found", 404)
@@ -121,4 +141,44 @@ func (app *application) updatePatientHandler(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(p)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (app *application) countPatientsHandler(w http.ResponseWriter, r *http.Request) {
+	var totalPatientCount int
+	err := app.db.QueryRow("SELECT COUNT(*) FROM patients").Scan(&totalPatientCount)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	app.logger.Printf("Total patient count: %d", totalPatientCount)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"Total patients": totalPatientCount})
+}
+
+func (app *application) findPatientHandler(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	rows, err := app.db.Query("SELECT id, name, age, condition FROM patients WHERE name LIKE ?", "%"+name+"%")
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	app.logger.Printf(`SEARCH: executing query for name='%s'`, name)
+
+	patientsSlice := make([]Patient, 0)
+
+	for rows.Next() {
+		var p Patient
+		if err := rows.Scan(&p.ID, &p.Name, &p.Age, &p.Condition); err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			return
+		}
+		patientsSlice = append(patientsSlice, p)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(patientsSlice)
 }
