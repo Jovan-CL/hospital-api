@@ -1,11 +1,14 @@
 package main
 
 import (
+	crand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -94,9 +97,31 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("LOGIN SUCCESS: Username=%s\n", creds.Username)
 
+	b := make([]byte, 16)
+
+	_, err = crand.Read(b)
+	if err != nil {
+		http.Error(w, "Error generating session token", http.StatusInternalServerError)
+		return
+	}
+
+	sessionToken := hex.EncodeToString(b)
+
+	expiry := time.Now().Add(2 * time.Hour)
+
+	_, err = app.db.Exec("INSERT INTO sessions (token, staff_id, expiry) VALUES (?, ?, ?)", sessionToken, creds.Username, expiry)
+	if err != nil {
+		app.logger.Printf("SESSION ERROR: %v", err)
+		http.Error(w, "Error creating session", http.StatusInternalServerError)
+		return
+	}
 	creds.Password = ""
 
+	app.logger.Printf("LOGIN SUCCESS: session created for user '%s'", creds.Username)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(creds)
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":  sessionToken,
+		"status": "Logged in successfully",
+	})
 }

@@ -36,8 +36,17 @@ func main() {
     username TEXT UNIQUE, -- UNIQUE prevents duplicate usernames
     password_hash TEXT,
     role TEXT
-);`
+	);`
 	_, _ = db.Exec(staffquery)
+
+	sessionsTableQuery := `CREATE TABLE IF NOT EXISTS sessions (
+	token TEXT PRIMARY KEY,
+	staff_id TEXT,
+	expiry DATETIME,
+	FOREIGN KEY (staff_id) REFERENCES staff(id)
+	);`
+
+	_, _ = db.Exec(sessionsTableQuery)
 
 	logger := log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 
