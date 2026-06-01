@@ -15,6 +15,7 @@ func (app *application) routes() http.Handler {
 
 	// STAFF routes
 	mux.HandleFunc("POST /staff/create-account", app.createStaffAccountHandler)
+	mux.HandleFunc("POST /login", app.loginHandler)
 	mux.HandleFunc("GET /staff", app.getAllStaffHandler)
 
 	return mux
