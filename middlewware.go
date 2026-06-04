@@ -1,11 +1,21 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"strings"
 	"time"
 )
+
+type AuthUser struct {
+	ID   string
+	Role Role
+}
+
+type contextKey string
+
+const authUserKey = contextKey("authUser")
 
 func (app *application) requireAuthentication(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -24,12 +34,16 @@ func (app *application) requireAuthentication(next http.HandlerFunc) http.Handle
 
 		token := parts[1]
 
-		var userID string
+		var userID AuthUser
 		var expiry time.Time
 
-		query := "SELECT staff_id, expiry FROM sessions WHERE token = ?"
+		query := `
+			SELECT s.staff_id, u.role, s.expiry 
+			FROM sessions s
+			JOIN users u ON s.staff_id = u.id
+			WHERE s.token = ?`
 
-		err := app.db.QueryRow(query, token).Scan(&userID, &expiry)
+		err := app.db.QueryRow(query, token).Scan(&userID.ID, &userID.Role, &expiry)
 		if err == sql.ErrNoRows {
 			app.logger.Printf("AUTH ERROR: invalid session token")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -46,7 +60,10 @@ func (app *application) requireAuthentication(next http.HandlerFunc) http.Handle
 			return
 		}
 
-		app.logger.Printf("AUTH SUCCESS: User ID %s authorized", userID)
+		ctx := context.WithValue(r.Context(), authUserKey, userID)
+		r = r.WithContext(ctx)
+
+		app.logger.Printf("AUTH SUCCESS: User ID %s authorized", userID.ID)
 		next.ServeHTTP(w, r)
 
 	}

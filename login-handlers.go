@@ -21,6 +21,10 @@ func (app *application) createStaffAccountHandler(w http.ResponseWriter, r *http
 		return
 	}
 
+	if !staff.Role.isValid() {
+		app.logger.Fatal("Invalid system role. Must be Admin, Doctor, Nurse, or Receptionist")
+	}
+
 	staff.ID = "STF-" + strconv.Itoa(rand.Intn(9000)+1000)
 
 	if staff.Username == "" || staff.Password == "" || staff.Role == "" || staff.Name == "" {

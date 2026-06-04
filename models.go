@@ -13,7 +13,25 @@ type Staff struct {
 	Name     string `json:"name"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
+	Role     Role   `json:"role"`
+}
+
+type Role string
+
+const (
+	RoleAdmin        Role = "Admin"
+	RoleDoctor       Role = "Doctor"
+	RoleNurse        Role = "Nurse"
+	RoleReceptionist Role = "Receptionist"
+)
+
+func (r Role) isValid() bool {
+	switch r {
+	case RoleAdmin, RoleDoctor, RoleNurse, RoleReceptionist:
+		return true
+	default:
+		return false
+	}
 }
 
 /*FOR OFFICIAL TESTING READY FOR USE IN PRODUCTION

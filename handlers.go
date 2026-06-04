@@ -14,6 +14,15 @@ func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println(p)
 
+	au, ok := r.Context().Value(authUserKey).(AuthUser)
+	if !ok {
+		app.logger.Printf("AUTH ERROR: failed to retrieve authenticated user from context")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	app.logger.Printf("STAFF LOG: User %s (%s) is attempting to create a patient", au.ID, au.Role)
+
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		fmt.Println("Error decoding JSON:", err)
 		http.Error(w, "Invalid data", http.StatusBadRequest)
@@ -154,31 +163,4 @@ func (app *application) countPatientsHandler(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"Total patients": totalPatientCount})
-}
-
-func (app *application) findPatientHandler(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
-	rows, err := app.db.Query("SELECT id, name, age, condition FROM patients WHERE name LIKE ?", "%"+name+"%")
-
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	app.logger.Printf(`SEARCH: executing query for name='%s'`, name)
-
-	patientsSlice := make([]Patient, 0)
-
-	for rows.Next() {
-		var p Patient
-		if err := rows.Scan(&p.ID, &p.Name, &p.Age, &p.Condition); err != nil {
-			http.Error(w, "Database error", http.StatusInternalServerError)
-			return
-		}
-		patientsSlice = append(patientsSlice, p)
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(patientsSlice)
 }
