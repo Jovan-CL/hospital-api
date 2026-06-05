@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +42,12 @@ func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Missing fields", http.StatusBadRequest)
 		return
 	}
-	_, err := app.db.Exec("INSERT INTO patients (id, name, age, condition) VALUES (?, ?, ?, ?)",
-		p.ID, p.Name, p.Age, p.Condition)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := "INSERT INTO patients (id, name, age, condition) VALUES (?, ?, ?, ?)"
+	_, err := app.db.ExecContext(ctx, query, p.ID, p.Name, p.Age, p.Condition)
 	if err != nil {
 		http.Error(w, "DB Error", 500)
 		return
@@ -53,7 +59,10 @@ func (app *application) createPatientHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (app *application) getAllPatientsHandler(w http.ResponseWriter, r *http.Request) {
-	rows, err := app.db.Query("SELECT * FROM patients")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	rows, err := app.db.QueryContext(ctx, "SELECT * FROM patients")
 	if err != nil {
 		http.Error(w, "DB Error", 500)
 		return
@@ -83,7 +92,10 @@ func (app *application) getPatientHandler(w http.ResponseWriter, r *http.Request
 	id := r.PathValue("id")
 	var p Patient
 
-	err := app.db.QueryRow("SELECT id, name, age, condition FROM patients WHERE id = ?", id).
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	err := app.db.QueryRowContext(ctx, "SELECT id, name, age, condition FROM patients WHERE id = ?", id).
 		Scan(&p.ID, &p.Name, &p.Age, &p.Condition)
 
 	if err == sql.ErrNoRows {
@@ -102,7 +114,10 @@ func (app *application) deletePatientHandler(w http.ResponseWriter, r *http.Requ
 
 	app.logger.Printf("Attempting to delete patient with ID: %s", id)
 
-	_, _ = app.db.Exec("DELETE FROM patients WHERE id = ?", id)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	_, _ = app.db.ExecContext(ctx, "DELETE FROM patients WHERE id = ?", id)
 	w.WriteHeader(http.StatusNoContent)
 
 	// 4. Send a success response
@@ -111,9 +126,14 @@ func (app *application) deletePatientHandler(w http.ResponseWriter, r *http.Requ
 
 func (app *application) updatePatientHandler(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 	// 1. Fetch current data from DB
 	var p Patient
-	err := app.db.QueryRow("SELECT id, name, age, condition FROM patients WHERE id = ?", id).
+
+	query := "SELECT id, name, age, condition FROM patients WHERE id = ?"
+	err := app.db.QueryRowContext(ctx, query, id).
 		Scan(&p.ID, &p.Name, &p.Age, &p.Condition)
 
 	app.logger.Printf("Fetched patient for update: %+v", p)
@@ -145,7 +165,7 @@ func (app *application) updatePatientHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	// 4. Save the updated version back to DB
-	_, err = app.db.Exec("UPDATE patients SET name = ?, age = ?, condition = ? WHERE id = ?",
+	_, err = app.db.ExecContext(ctx, "UPDATE patients SET name = ?, age = ?, condition = ? WHERE id = ?",
 		p.Name, p.Age, p.Condition, id)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(p)

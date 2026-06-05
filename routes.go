@@ -18,5 +18,5 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("POST /login", app.loginHandler)
 	mux.HandleFunc("GET /staff", app.requireAuthentication(app.getAllStaffHandler)) // Protected
 
-	return mux
+	return app.enableCORS(mux)
 }

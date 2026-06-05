@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	crand "crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -88,7 +89,8 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var storedHash string
-	err := app.db.QueryRow("SELECT password_hash FROM staff WHERE username = ?", creds.Username).Scan(&storedHash)
+
+	err := app.db.QueryRow("SELECT id, username, password_hash, role FROM staff WHERE username = ?", creds.Username).Scan(&creds.ID, &creds.Username, &storedHash, &creds.Role)
 	if err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
@@ -97,9 +99,13 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(creds.Password)); err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
+	} else if err != nil {
+		app.logger.Printf("LOGIN DB ERROR: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
-	fmt.Printf("LOGIN SUCCESS: Username=%s\n", creds.Username)
+	fmt.Printf("LOGIN SUCCESS: Username=%s, ID=%s, Role=%s\n", creds.Username, creds.ID, creds.Role)
 
 	b := make([]byte, 16)
 
@@ -113,7 +119,12 @@ func (app *application) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 	expiry := time.Now().Add(2 * time.Hour)
 
-	_, err = app.db.Exec("INSERT INTO sessions (token, staff_id, expiry) VALUES (?, ?, ?)", sessionToken, creds.Username, expiry)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	fmt.Printf("👉 SAVING TO DB -> Token: %s | Staff ID: %s | Expiry: %v\n", sessionToken, creds.ID, expiry)
+
+	_, err = app.db.ExecContext(ctx, "INSERT INTO sessions (token, staff_id, expiry) VALUES (?, ?, ?)", sessionToken, creds.ID, expiry)
 	if err != nil {
 		app.logger.Printf("SESSION ERROR: %v", err)
 		http.Error(w, "Error creating session", http.StatusInternalServerError)
